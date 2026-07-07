@@ -29,13 +29,14 @@ button:hover { background: #6d28d9; }
 .odds-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 12px; }
 .odds-label { color: #7c7c9e; }
 .odds-value { font-weight: bold; }
-.odds-change { font-size: 11px; margin-left: 5px; }
-.change-up { color: #ef4444; }
-.change-down { color: #10b981; }
+.result-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 5px; }
+.result-win { background: #10b981; color: #000; }
+.result-loss { background: #ef4444; color: #fff; }
 .confidence-bar { background: #0a0a1a; border-radius: 10px; height: 8px; margin: 10px 0; overflow: hidden; }
 .confidence-fill { height: 100%; border-radius: 10px; }
 .ai-reason { font-size: 11px; color: #b9c4ba; margin-top: 10px; padding: 8px; background: #0a0a1a; border-radius: 6px; line-height: 1.5; }
 .write-btn { width: 100%; padding: 8px; margin-top: 10px; background: #7c3aed; color: #fff; border: none; cursor: pointer; font-weight: bold; border-radius: 6px; font-size: 11px; }
+.score-display { text-align: center; font-size: 20px; font-weight: bold; color: #a78bfa; margin: 10px 0; }
 #log { background: #13132b; border: 1px solid #2d2d5e; padding: 15px; border-radius: 8px; margin-top: 20px; font-size: 11px; color: #7c7c9e; max-height: 150px; overflow-y: auto; }
 .refresh-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
 .live-dot { display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-right: 6px; animation: pulse 1s infinite; }
@@ -57,19 +58,19 @@ button:hover { background: #6d28d9; }
 
 <div class="stats-bar">
   <div class="stat"><div class="stat-val" id="totalSignals">0</div><div>Signals</div></div>
-  <div class="stat"><div class="stat-val" id="buySignals">0</div><div>BUY</div></div>
-  <div class="stat"><div class="stat-val" id="sellSignals">0</div><div>SELL</div></div>
-  <div class="stat"><div class="stat-val" id="holdSignals">0</div><div>HOLD</div></div>
+  <div class="stat"><div class="stat-val" id="buySignals" style="color:#10b981;">0</div><div>BUY</div></div>
+  <div class="stat"><div class="stat-val" id="sellSignals" style="color:#ef4444;">0</div><div>SELL</div></div>
+  <div class="stat"><div class="stat-val" id="holdSignals" style="color:#f59e0b;">0</div><div>HOLD</div></div>
   <div class="stat"><div class="stat-val" id="onChain">0</div><div>On-Chain</div></div>
 </div>
 
 <div class="refresh-bar">
-  <div><span class="live-dot"></span><span style="font-size:12px; color:#10b981;">TxLINE Live Odds</span></div>
+  <div><span class="live-dot"></span><span style="font-size:12px; color:#10b981;">TxLINE Live + WorldCup26 Results</span></div>
   <button id="refreshBtn">🔄 Refresh Signals</button>
 </div>
 
 <div class="signal-grid" id="signalGrid">
-  <div style="color:#7c7c9e; padding:20px;">Loading signals from TxLINE...</div>
+  <div style="color:#7c7c9e; padding:20px;">Loading signals...</div>
 </div>
 
 <div id="log"><div style="color:#a78bfa;">📋 Activity Log</div></div>
@@ -79,17 +80,19 @@ var wallet = null;
 var txlineJwt = null;
 var onChainCount = 0;
 var prevOdds = {};
+var wcGames = [];
 var API_TOKEN = "txoracle_api_e44c346212fe433c8b42b4bae17ce33d";
 var TXLINE = "https://txline-dev.txodds.com";
+var WC_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjZhNGE1MmM5YjMwMTVlNWJmM2ViZTU3NCIsImlhdCI6MTc4MzI1NTc4MywiZXhwIjoxNzkwNTEzMzgzfQ.4Fvylt8oovD-9b1FWLWwjpPKubBHzsvsZKBD2coP_dA";
 
 var FIXTURES = [
-  { id: 18187298, home: "Brazil", away: "Norway" },
-  { id: 18192996, home: "Mexico", away: "England" },
-  { id: 18193785, home: "USA", away: "Belgium" },
-  { id: 18198205, home: "Portugal", away: "Spain" },
-  { id: 18202701, home: "Argentina", away: "Egypt" },
-  { id: 18202783, home: "Switzerland", away: "Colombia" },
-  { id: 18209181, home: "France", away: "Morocco" }
+  { id: 18187298, home: "Brazil", away: "Norway", homeOddsBase: 2.065, awayOddsBase: 5.398 },
+  { id: 18192996, home: "Mexico", away: "England", homeOddsBase: 3.2, awayOddsBase: 2.1 },
+  { id: 18193785, home: "USA", away: "Belgium", homeOddsBase: 2.8, awayOddsBase: 2.6 },
+  { id: 18198205, home: "Portugal", away: "Spain", homeOddsBase: 2.4, awayOddsBase: 2.9 },
+  { id: 18202701, home: "Argentina", away: "Egypt", homeOddsBase: 1.4, awayOddsBase: 8.5 },
+  { id: 18202783, home: "Switzerland", away: "Colombia", homeOddsBase: 2.1, awayOddsBase: 3.4 },
+  { id: 18209181, home: "France", away: "Morocco", homeOddsBase: 1.6, awayOddsBase: 6.2 }
 ];
 
 async function getTxLineJwt() {
@@ -97,6 +100,22 @@ async function getTxLineJwt() {
   var data = await res.json();
   txlineJwt = data.token;
   return txlineJwt;
+}
+
+async function loadWCGames() {
+  try {
+    var res = await fetch("https://worldcup26.ir/get/games", {
+      headers: { "Authorization": "Bearer " + WC_TOKEN }
+    });
+    var data = await res.json();
+    wcGames = data.games || [];
+  } catch(e) {}
+}
+
+function findWCGame(home, away) {
+  return wcGames.find(function(g) {
+    return g.home_team_name_en === home && g.away_team_name_en === away;
+  });
 }
 
 async function getOdds(fixtureId) {
@@ -112,7 +131,7 @@ async function getOdds(fixtureId) {
         home: market.Prices[0] / 1000,
         draw: market.Prices[1] / 1000,
         away: market.Prices[2] / 1000,
-        inRunning: market.InRunning
+        live: true
       };
     }
     return null;
@@ -121,80 +140,103 @@ async function getOdds(fixtureId) {
   }
 }
 
-function analyzeSignal(fixture, odds) {
-  var key = fixture.id;
-  var prev = prevOdds[key];
+function analyzeSignal(fixture, odds, game) {
+  var signal, target, confidence, reason;
+  var isFinished = game && game.time_elapsed === "finished";
 
-  var homeChange = 0;
-  var awayChange = 0;
+  if (isFinished) {
+    var hs = parseInt(game.home_score) || 0;
+    var as = parseInt(game.away_score) || 0;
+    var homeWon = hs > as;
+    var awayWon = as > hs;
+    var homeFavorite = fixture.homeOddsBase < fixture.awayOddsBase;
 
-  if (prev) {
-    homeChange = ((odds.home - prev.home) / prev.home) * 100;
-    awayChange = ((odds.away - prev.away) / prev.away) * 100;
-  }
-
-  // Signal logic
-  var signal = "HOLD";
-  var confidence = 50;
-  var target = fixture.home;
-  var reason = "";
-
-  if (Math.abs(homeChange) < 0.1 && Math.abs(awayChange) < 0.1) {
-    // No significant change — use odds level
-    if (odds.home < odds.away) {
+    if (homeWon && !homeFavorite) {
+      // Underdog home won — SELL (overpriced now)
+      signal = "SELL";
+      target = fixture.home;
+      confidence = 82;
+      reason = "⚠️ " + fixture.home + " won as underdog (" + hs + "-" + as + "). Market overreaction expected. Take profits — SELL signal.";
+    } else if (awayWon && homeFavorite) {
+      // Favorite lost — SELL favorite, BUY underdog winner
+      signal = "SELL";
+      target = fixture.home;
+      confidence = 88;
+      reason = "🔴 Upset alert! " + fixture.home + " lost (" + hs + "-" + as + ") as favorite. Sharp reversal — SELL " + fixture.home + ", consider " + fixture.away + " momentum play.";
+    } else if (homeWon && homeFavorite) {
+      // Favorite won — BUY momentum
       signal = "BUY";
       target = fixture.home;
-      confidence = Math.round(60 + (odds.away - odds.home) * 3);
-      reason = fixture.home + " is the clear favorite at " + odds.home.toFixed(2) + "x odds. Strong market confidence.";
-    } else {
+      confidence = 72;
+      reason = "✅ " + fixture.home + " delivered as favorite (" + hs + "-" + as + "). Momentum play — BUY for next round.";
+    } else if (awayWon && !homeFavorite) {
+      // Underdog away won — BUY momentum
       signal = "BUY";
       target = fixture.away;
-      confidence = Math.round(55 + (odds.home - odds.away) * 2);
-      reason = fixture.away + " showing value at " + odds.away.toFixed(2) + "x. Potential upset opportunity.";
+      confidence = 78;
+      reason = "⚡ " + fixture.away + " upset win (" + hs + "-" + as + ")! Underdog momentum building — BUY for next round.";
+    } else {
+      // Draw
+      signal = "HOLD";
+      target = fixture.home;
+      confidence = 50;
+      reason = "Draw result. Uncertain momentum — HOLD until next match.";
     }
-  } else if (homeChange < -2) {
-    // Home odds dropping fast — smart money on home
-    signal = "BUY";
-    target = fixture.home;
-    confidence = Math.min(95, Math.round(65 + Math.abs(homeChange) * 2));
-    reason = "Sharp money moving into " + fixture.home + ". Odds dropped " + Math.abs(homeChange).toFixed(1) + "% — institutional signal detected.";
-  } else if (awayChange < -2) {
-    // Away odds dropping fast — smart money on away
-    signal = "BUY";
-    target = fixture.away;
-    confidence = Math.min(95, Math.round(65 + Math.abs(awayChange) * 2));
-    reason = "Surprise money flowing to " + fixture.away + ". Odds dropped " + Math.abs(awayChange).toFixed(1) + "% — potential upset incoming.";
-  } else if (homeChange > 3) {
-    // Home odds rising — money leaving home
-    signal = "SELL";
-    target = fixture.home;
-    confidence = Math.min(90, Math.round(60 + homeChange * 1.5));
-    reason = fixture.home + " odds rising " + homeChange.toFixed(1) + "%. Smart money exiting — reconsider position.";
-  } else if (awayChange > 3) {
-    // Away odds rising — money leaving away
-    signal = "SELL";
-    target = fixture.away;
-    confidence = Math.min(90, Math.round(60 + awayChange * 1.5));
-    reason = fixture.away + " odds drifting " + awayChange.toFixed(1) + "%. Market losing confidence — potential sell signal.";
+  } else if (odds) {
+    // Live odds analysis
+    var homeChange = 0;
+    var awayChange = 0;
+    var key = fixture.id;
+    var prev = prevOdds[key];
+
+    if (prev) {
+      homeChange = ((odds.home - prev.home) / prev.home) * 100;
+      awayChange = ((odds.away - prev.away) / prev.away) * 100;
+    }
+
+    prevOdds[key] = { home: odds.home, away: odds.away };
+
+    if (homeChange < -3) {
+      signal = "BUY";
+      target = fixture.home;
+      confidence = Math.min(92, Math.round(70 + Math.abs(homeChange) * 2));
+      reason = "📈 Sharp money on " + fixture.home + "! Odds dropped " + Math.abs(homeChange).toFixed(1) + "% — institutional BUY signal detected.";
+    } else if (awayChange < -3) {
+      signal = "BUY";
+      target = fixture.away;
+      confidence = Math.min(92, Math.round(68 + Math.abs(awayChange) * 2));
+      reason = "📈 Smart money flowing to " + fixture.away + "! Odds dropped " + Math.abs(awayChange).toFixed(1) + "% — potential upset, BUY signal.";
+    } else if (homeChange > 4) {
+      signal = "SELL";
+      target = fixture.home;
+      confidence = Math.min(88, Math.round(65 + homeChange * 1.5));
+      reason = "📉 Money leaving " + fixture.home + ". Odds drifting " + homeChange.toFixed(1) + "% upward — SELL signal, market losing confidence.";
+    } else if (awayChange > 4) {
+      signal = "SELL";
+      target = fixture.away;
+      confidence = Math.min(88, Math.round(65 + awayChange * 1.5));
+      reason = "📉 " + fixture.away + " odds drifting " + awayChange.toFixed(1) + "% — SELL signal, sharp money exiting position.";
+    } else if (odds.home < odds.away) {
+      signal = "BUY";
+      target = fixture.home;
+      confidence = Math.round(58 + (odds.away - odds.home) * 3);
+      confidence = Math.min(80, confidence);
+      reason = "📊 " + fixture.home + " is market favorite at " + odds.home.toFixed(2) + "x vs " + odds.away.toFixed(2) + "x. Stable BUY signal.";
+    } else {
+      signal = "HOLD";
+      target = fixture.home;
+      confidence = 52;
+      reason = "⏳ Odds stable, no significant movement. Wait for clearer signal before entering position.";
+    }
   } else {
     signal = "HOLD";
-    confidence = 50;
     target = fixture.home;
-    reason = "Odds stable. No significant market movement detected. Wait for clearer signal.";
+    confidence = 45;
+    reason = "No odds data available. Match may not have started yet.";
   }
 
   confidence = Math.min(95, Math.max(40, confidence));
-
-  prevOdds[key] = { home: odds.home, away: odds.away };
-
-  return {
-    signal: signal,
-    target: target,
-    confidence: confidence,
-    reason: reason,
-    homeChange: homeChange,
-    awayChange: awayChange
-  };
+  return { signal: signal, target: target, confidence: confidence, reason: reason };
 }
 
 function getConfidenceColor(confidence) {
@@ -203,38 +245,46 @@ function getConfidenceColor(confidence) {
   return "#ef4444";
 }
 
-function renderSignal(fixture, odds, analysis) {
+function renderSignal(fixture, odds, analysis, game) {
   var signalClass = analysis.signal.toLowerCase();
   var badgeClass = "badge-" + signalClass;
-
-  var homeChangeStr = analysis.homeChange !== 0
-    ? "<span class='odds-change " + (analysis.homeChange < 0 ? "change-down" : "change-up") + "'>" +
-      (analysis.homeChange > 0 ? "+" : "") + analysis.homeChange.toFixed(1) + "%</span>"
-    : "";
-
-  var awayChangeStr = analysis.awayChange !== 0
-    ? "<span class='odds-change " + (analysis.awayChange < 0 ? "change-down" : "change-up") + "'>" +
-      (analysis.awayChange > 0 ? "+" : "") + analysis.awayChange.toFixed(1) + "%</span>"
-    : "";
-
   var color = getConfidenceColor(analysis.confidence);
+  var isFinished = game && game.time_elapsed === "finished";
 
-  return "<div class='signal-card " + signalClass + "' id='card-" + fixture.id + "'>" +
+  var homeOddsStr = odds ? odds.home.toFixed(2) + "x" : fixture.homeOddsBase.toFixed(2) + "x*";
+  var drawOddsStr = odds ? odds.draw.toFixed(2) + "x" : "3.20x*";
+  var awayOddsStr = odds ? odds.away.toFixed(2) + "x" : fixture.awayOddsBase.toFixed(2) + "x*";
+
+  var homeResult = "";
+  var awayResult = "";
+  if (isFinished) {
+    var hs = parseInt(game.home_score) || 0;
+    var as = parseInt(game.away_score) || 0;
+    if (hs > as) homeResult = "<span class='result-badge result-win'>WIN</span>";
+    else if (hs < as) homeResult = "<span class='result-badge result-loss'>LOSS</span>";
+    if (as > hs) awayResult = "<span class='result-badge result-win'>WIN</span>";
+    else if (as < hs) awayResult = "<span class='result-badge result-loss'>LOSS</span>";
+  }
+
+  var scoreStr = isFinished ? game.home_score + " - " + game.away_score : "";
+
+  return "<div class='signal-card " + signalClass + "'>" +
     "<div class='signal-header'>" +
     "<div class='match-name'>" + fixture.home + " vs " + fixture.away + "</div>" +
     "<div class='signal-badge " + badgeClass + "'>" + analysis.signal + "</div>" +
     "</div>" +
+    (scoreStr ? "<div class='score-display'>" + scoreStr + "</div>" : "") +
     "<div class='odds-row'>" +
-    "<span class='odds-label'>" + fixture.home + "</span>" +
-    "<span class='odds-value'>" + odds.home.toFixed(2) + "x" + homeChangeStr + "</span>" +
+    "<span class='odds-label'>" + fixture.home + homeResult + "</span>" +
+    "<span class='odds-value'>" + homeOddsStr + "</span>" +
     "</div>" +
     "<div class='odds-row'>" +
     "<span class='odds-label'>Draw</span>" +
-    "<span class='odds-value'>" + odds.draw.toFixed(2) + "x</span>" +
+    "<span class='odds-value'>" + drawOddsStr + "</span>" +
     "</div>" +
     "<div class='odds-row'>" +
-    "<span class='odds-label'>" + fixture.away + "</span>" +
-    "<span class='odds-value'>" + odds.away.toFixed(2) + "x" + awayChangeStr + "</span>" +
+    "<span class='odds-label'>" + fixture.away + awayResult + "</span>" +
+    "<span class='odds-value'>" + awayOddsStr + "</span>" +
     "</div>" +
     "<div style='margin-top:10px;'>" +
     "<div style='display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px;'>" +
@@ -243,34 +293,26 @@ function renderSignal(fixture, odds, analysis) {
     "</div>" +
     "<div class='confidence-bar'><div class='confidence-fill' style='width:" + analysis.confidence + "%; background:" + color + ";'></div></div>" +
     "</div>" +
-    "<div class='ai-reason'>🤖 <strong>Signal: " + analysis.target + "</strong><br>" + analysis.reason + "</div>" +
+    "<div class='ai-reason'>🤖 <strong>Signal: " + analysis.signal + " " + analysis.target + "</strong><br>" + analysis.reason + "</div>" +
     "<button class='write-btn' onclick='writeSignal(" + fixture.id + ", \"" + fixture.home + "\", \"" + fixture.away + "\", \"" + analysis.signal + "\", \"" + analysis.target + "\", " + analysis.confidence + ")'>⛓ Write Signal to Chain</button>" +
     "</div>";
 }
 
 async function loadSignals() {
-  document.getElementById("signalGrid").innerHTML = "<div style='color:#7c7c9e; padding:20px;'>Loading TxLINE odds...</div>";
-  addLog("Fetching TxLINE odds...");
+  document.getElementById("signalGrid").innerHTML = "<div style='color:#7c7c9e; padding:20px;'>Loading signals from TxLINE & WorldCup26...</div>";
+  addLog("Fetching data...");
+
+  await loadWCGames();
 
   var html = "";
   var buy = 0, sell = 0, hold = 0, total = 0;
-  var hasAny = false;
 
   for (var i = 0; i < FIXTURES.length; i++) {
     var f = FIXTURES[i];
     var odds = await getOdds(f.id);
-
-    if (!odds) {
-      html += "<div class='signal-card hold'>" +
-        "<div class='match-name'>" + f.home + " vs " + f.away + "</div>" +
-        "<div style='color:#7c7c9e; font-size:11px; margin-top:10px;'>No live odds — match may have ended</div>" +
-        "</div>";
-      continue;
-    }
-
-    hasAny = true;
-    var analysis = analyzeSignal(f, odds);
-    html += renderSignal(f, odds, analysis);
+    var game = findWCGame(f.home, f.away);
+    var analysis = analyzeSignal(f, odds, game);
+    html += renderSignal(f, odds, analysis, game);
 
     if (analysis.signal === "BUY") buy++;
     else if (analysis.signal === "SELL") sell++;
@@ -284,11 +326,7 @@ async function loadSignals() {
   document.getElementById("sellSignals").textContent = sell;
   document.getElementById("holdSignals").textContent = hold;
 
-  if (hasAny) {
-    addLog("✓ Signals loaded — " + buy + " BUY, " + sell + " SELL, " + hold + " HOLD");
-  } else {
-    addLog("No live odds available — matches may have ended");
-  }
+  addLog("✓ Signals loaded — " + buy + " BUY, " + sell + " SELL, " + hold + " HOLD");
 }
 
 async function writeSignal(fixtureId, home, away, signal, target, confidence) {
@@ -314,8 +352,7 @@ async function writeSignal(fixtureId, home, away, signal, target, confidence) {
 
     onChainCount++;
     document.getElementById("onChain").textContent = onChainCount;
-
-    addLog("✓ Signal written: " + signal + " " + target + " (" + confidence + "% confidence)");
+    addLog("✓ " + signal + " " + target + " written! Conf: " + confidence + "%");
     addLog('<a style="color:#a78bfa;" href="https://explorer.solana.com/tx/' + txid + '?cluster=devnet" target="_blank">' + txid.slice(0,20) + "...</a>");
   } catch(e) {
     addLog("Error: " + e.message);
@@ -340,11 +377,8 @@ document.getElementById("connectBtn").addEventListener("click", function() {
   }).catch(function(e) { addLog("Error: " + e.message); });
 });
 
-document.getElementById("refreshBtn").addEventListener("click", function() {
-  loadSignals();
-});
+document.getElementById("refreshBtn").addEventListener("click", loadSignals);
 
-// Load on start + refresh every 60 seconds
 loadSignals();
 setInterval(loadSignals, 60000);
 </script>
