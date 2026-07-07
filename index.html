@@ -10,6 +10,10 @@ body { background: #0a0a1a; color: #e8e8f0; font-family: Arial, sans-serif; padd
 h1 { font-size: 28px; color: #a78bfa; text-align: center; margin-bottom: 5px; }
 .subtitle { text-align: center; color: #7c7c9e; font-size: 12px; margin-bottom: 20px; }
 .topbar { display: flex; justify-content: space-between; align-items: center; background: #13132b; border: 1px solid #2d2d5e; padding: 10px 20px; border-radius: 8px; margin-bottom: 20px; }
+.btn-connect { padding: 10px 20px; background: #7c3aed; color: #fff; border: none; cursor: pointer; font-weight: bold; border-radius: 6px; }
+.btn-connect:hover { background: #6d28d9; }
+.btn-disconnect { padding: 10px 20px; background: #ef4444; color: #fff; border: none; cursor: pointer; font-weight: bold; border-radius: 6px; display: none; }
+.btn-disconnect:hover { background: #dc2626; }
 button { padding: 10px 20px; background: #7c3aed; color: #fff; border: none; cursor: pointer; font-weight: bold; border-radius: 6px; }
 button:hover { background: #6d28d9; }
 .stats-bar { background: #13132b; border: 1px solid #2d2d5e; padding: 15px; border-radius: 8px; margin-bottom: 15px; display: flex; gap: 30px; font-size: 12px; flex-wrap: wrap; }
@@ -52,7 +56,8 @@ button:hover { background: #6d28d9; }
   <div style="font-size:11px; color:#7c7c9e;">Program: DQvUS9W1q6scsf2w5mLXcZfsvkf645pKYYQN8p6rhsMq</div>
   <div style="display:flex; gap:10px; align-items:center;">
     <div id="walletAddr" style="font-size:12px; color:#a78bfa;"></div>
-    <button id="connectBtn">Connect Phantom</button>
+    <button class="btn-connect" id="connectBtn">Connect Phantom</button>
+    <button class="btn-disconnect" id="disconnectBtn">Disconnect</button>
   </div>
 </div>
 
@@ -127,17 +132,10 @@ async function getOdds(fixtureId) {
     var data = await res.json();
     var market = data.find(function(d) { return d.SuperOddsType === "1X2_PARTICIPANT_RESULT"; });
     if (market && market.Prices && market.Prices.length >= 3) {
-      return {
-        home: market.Prices[0] / 1000,
-        draw: market.Prices[1] / 1000,
-        away: market.Prices[2] / 1000,
-        live: true
-      };
+      return { home: market.Prices[0] / 1000, draw: market.Prices[1] / 1000, away: market.Prices[2] / 1000 };
     }
     return null;
-  } catch(e) {
-    return null;
-  }
+  } catch(e) { return null; }
 }
 
 function analyzeSignal(fixture, odds, game) {
@@ -147,196 +145,133 @@ function analyzeSignal(fixture, odds, game) {
   if (isFinished) {
     var hs = parseInt(game.home_score) || 0;
     var as = parseInt(game.away_score) || 0;
-    var homeWon = hs > as;
-    var awayWon = as > hs;
     var homeFavorite = fixture.homeOddsBase < fixture.awayOddsBase;
 
-    if (homeWon && !homeFavorite) {
-      // Underdog home won — SELL (overpriced now)
-      signal = "SELL";
-      target = fixture.home;
-      confidence = 82;
-      reason = "⚠️ " + fixture.home + " won as underdog (" + hs + "-" + as + "). Market overreaction expected. Take profits — SELL signal.";
-    } else if (awayWon && homeFavorite) {
-      // Favorite lost — SELL favorite, BUY underdog winner
-      signal = "SELL";
-      target = fixture.home;
-      confidence = 88;
-      reason = "🔴 Upset alert! " + fixture.home + " lost (" + hs + "-" + as + ") as favorite. Sharp reversal — SELL " + fixture.home + ", consider " + fixture.away + " momentum play.";
-    } else if (homeWon && homeFavorite) {
-      // Favorite won — BUY momentum
-      signal = "BUY";
-      target = fixture.home;
-      confidence = 72;
+    if (hs > as && !homeFavorite) {
+      signal = "SELL"; target = fixture.home; confidence = 82;
+      reason = "⚠️ " + fixture.home + " won as underdog (" + hs + "-" + as + "). Market overreaction — take profits, SELL signal.";
+    } else if (as > hs && homeFavorite) {
+      signal = "SELL"; target = fixture.home; confidence = 88;
+      reason = "🔴 Upset! " + fixture.home + " lost (" + hs + "-" + as + ") as favorite. Sharp reversal — SELL " + fixture.home + ".";
+    } else if (hs > as && homeFavorite) {
+      signal = "BUY"; target = fixture.home; confidence = 72;
       reason = "✅ " + fixture.home + " delivered as favorite (" + hs + "-" + as + "). Momentum play — BUY for next round.";
-    } else if (awayWon && !homeFavorite) {
-      // Underdog away won — BUY momentum
-      signal = "BUY";
-      target = fixture.away;
-      confidence = 78;
-      reason = "⚡ " + fixture.away + " upset win (" + hs + "-" + as + ")! Underdog momentum building — BUY for next round.";
+    } else if (as > hs && !homeFavorite) {
+      signal = "BUY"; target = fixture.away; confidence = 78;
+      reason = "⚡ " + fixture.away + " upset win (" + hs + "-" + as + ")! Underdog momentum — BUY for next round.";
     } else {
-      // Draw
-      signal = "HOLD";
-      target = fixture.home;
-      confidence = 50;
+      signal = "HOLD"; target = fixture.home; confidence = 50;
       reason = "Draw result. Uncertain momentum — HOLD until next match.";
     }
   } else if (odds) {
-    // Live odds analysis
-    var homeChange = 0;
-    var awayChange = 0;
     var key = fixture.id;
     var prev = prevOdds[key];
-
-    if (prev) {
-      homeChange = ((odds.home - prev.home) / prev.home) * 100;
-      awayChange = ((odds.away - prev.away) / prev.away) * 100;
-    }
-
+    var homeChange = prev ? ((odds.home - prev.home) / prev.home) * 100 : 0;
+    var awayChange = prev ? ((odds.away - prev.away) / prev.away) * 100 : 0;
     prevOdds[key] = { home: odds.home, away: odds.away };
 
     if (homeChange < -3) {
-      signal = "BUY";
-      target = fixture.home;
+      signal = "BUY"; target = fixture.home;
       confidence = Math.min(92, Math.round(70 + Math.abs(homeChange) * 2));
-      reason = "📈 Sharp money on " + fixture.home + "! Odds dropped " + Math.abs(homeChange).toFixed(1) + "% — institutional BUY signal detected.";
+      reason = "📈 Sharp money on " + fixture.home + "! Odds dropped " + Math.abs(homeChange).toFixed(1) + "% — BUY signal.";
     } else if (awayChange < -3) {
-      signal = "BUY";
-      target = fixture.away;
+      signal = "BUY"; target = fixture.away;
       confidence = Math.min(92, Math.round(68 + Math.abs(awayChange) * 2));
-      reason = "📈 Smart money flowing to " + fixture.away + "! Odds dropped " + Math.abs(awayChange).toFixed(1) + "% — potential upset, BUY signal.";
+      reason = "📈 Smart money on " + fixture.away + "! Odds dropped " + Math.abs(awayChange).toFixed(1) + "% — BUY signal.";
     } else if (homeChange > 4) {
-      signal = "SELL";
-      target = fixture.home;
+      signal = "SELL"; target = fixture.home;
       confidence = Math.min(88, Math.round(65 + homeChange * 1.5));
-      reason = "📉 Money leaving " + fixture.home + ". Odds drifting " + homeChange.toFixed(1) + "% upward — SELL signal, market losing confidence.";
+      reason = "📉 Money leaving " + fixture.home + ". Odds drifting " + homeChange.toFixed(1) + "% — SELL signal.";
     } else if (awayChange > 4) {
-      signal = "SELL";
-      target = fixture.away;
+      signal = "SELL"; target = fixture.away;
       confidence = Math.min(88, Math.round(65 + awayChange * 1.5));
-      reason = "📉 " + fixture.away + " odds drifting " + awayChange.toFixed(1) + "% — SELL signal, sharp money exiting position.";
+      reason = "📉 " + fixture.away + " odds drifting " + awayChange.toFixed(1) + "% — SELL signal.";
     } else if (odds.home < odds.away) {
-      signal = "BUY";
-      target = fixture.home;
-      confidence = Math.round(58 + (odds.away - odds.home) * 3);
-      confidence = Math.min(80, confidence);
-      reason = "📊 " + fixture.home + " is market favorite at " + odds.home.toFixed(2) + "x vs " + odds.away.toFixed(2) + "x. Stable BUY signal.";
+      signal = "BUY"; target = fixture.home;
+      confidence = Math.min(80, Math.round(58 + (odds.away - odds.home) * 3));
+      reason = "📊 " + fixture.home + " is market favorite at " + odds.home.toFixed(2) + "x. Stable BUY signal.";
     } else {
-      signal = "HOLD";
-      target = fixture.home;
-      confidence = 52;
-      reason = "⏳ Odds stable, no significant movement. Wait for clearer signal before entering position.";
+      signal = "HOLD"; target = fixture.home; confidence = 52;
+      reason = "⏳ Odds stable, no significant movement. Wait for clearer signal.";
     }
   } else {
-    signal = "HOLD";
-    target = fixture.home;
-    confidence = 45;
+    signal = "HOLD"; target = fixture.home; confidence = 45;
     reason = "No odds data available. Match may not have started yet.";
   }
 
-  confidence = Math.min(95, Math.max(40, confidence));
-  return { signal: signal, target: target, confidence: confidence, reason: reason };
+  return { signal: signal, target: target, confidence: Math.min(95, Math.max(40, confidence)), reason: reason };
 }
 
-function getConfidenceColor(confidence) {
-  if (confidence >= 75) return "#10b981";
-  if (confidence >= 60) return "#f59e0b";
-  return "#ef4444";
+function getConfidenceColor(c) {
+  return c >= 75 ? "#10b981" : c >= 60 ? "#f59e0b" : "#ef4444";
 }
 
 function renderSignal(fixture, odds, analysis, game) {
-  var signalClass = analysis.signal.toLowerCase();
-  var badgeClass = "badge-" + signalClass;
+  var sc = analysis.signal.toLowerCase();
   var color = getConfidenceColor(analysis.confidence);
   var isFinished = game && game.time_elapsed === "finished";
+  var homeOdds = odds ? odds.home.toFixed(2) + "x" : fixture.homeOddsBase.toFixed(2) + "x";
+  var drawOdds = odds ? odds.draw.toFixed(2) + "x" : "3.20x";
+  var awayOdds = odds ? odds.away.toFixed(2) + "x" : fixture.awayOddsBase.toFixed(2) + "x";
+  var homeResult = ""; var awayResult = "";
+  var scoreStr = "";
 
-  var homeOddsStr = odds ? odds.home.toFixed(2) + "x" : fixture.homeOddsBase.toFixed(2) + "x*";
-  var drawOddsStr = odds ? odds.draw.toFixed(2) + "x" : "3.20x*";
-  var awayOddsStr = odds ? odds.away.toFixed(2) + "x" : fixture.awayOddsBase.toFixed(2) + "x*";
-
-  var homeResult = "";
-  var awayResult = "";
   if (isFinished) {
     var hs = parseInt(game.home_score) || 0;
     var as = parseInt(game.away_score) || 0;
-    if (hs > as) homeResult = "<span class='result-badge result-win'>WIN</span>";
-    else if (hs < as) homeResult = "<span class='result-badge result-loss'>LOSS</span>";
-    if (as > hs) awayResult = "<span class='result-badge result-win'>WIN</span>";
-    else if (as < hs) awayResult = "<span class='result-badge result-loss'>LOSS</span>";
+    scoreStr = hs + " - " + as;
+    homeResult = hs > as ? "<span class='result-badge result-win'>WIN</span>" : hs < as ? "<span class='result-badge result-loss'>LOSS</span>" : "";
+    awayResult = as > hs ? "<span class='result-badge result-win'>WIN</span>" : as < hs ? "<span class='result-badge result-loss'>LOSS</span>" : "";
   }
 
-  var scoreStr = isFinished ? game.home_score + " - " + game.away_score : "";
-
-  return "<div class='signal-card " + signalClass + "'>" +
-    "<div class='signal-header'>" +
-    "<div class='match-name'>" + fixture.home + " vs " + fixture.away + "</div>" +
-    "<div class='signal-badge " + badgeClass + "'>" + analysis.signal + "</div>" +
-    "</div>" +
+  return "<div class='signal-card " + sc + "'>" +
+    "<div class='signal-header'><div class='match-name'>" + fixture.home + " vs " + fixture.away + "</div>" +
+    "<div class='signal-badge badge-" + sc + "'>" + analysis.signal + "</div></div>" +
     (scoreStr ? "<div class='score-display'>" + scoreStr + "</div>" : "") +
-    "<div class='odds-row'>" +
-    "<span class='odds-label'>" + fixture.home + homeResult + "</span>" +
-    "<span class='odds-value'>" + homeOddsStr + "</span>" +
-    "</div>" +
-    "<div class='odds-row'>" +
-    "<span class='odds-label'>Draw</span>" +
-    "<span class='odds-value'>" + drawOddsStr + "</span>" +
-    "</div>" +
-    "<div class='odds-row'>" +
-    "<span class='odds-label'>" + fixture.away + awayResult + "</span>" +
-    "<span class='odds-value'>" + awayOddsStr + "</span>" +
-    "</div>" +
+    "<div class='odds-row'><span class='odds-label'>" + fixture.home + homeResult + "</span><span class='odds-value'>" + homeOdds + "</span></div>" +
+    "<div class='odds-row'><span class='odds-label'>Draw</span><span class='odds-value'>" + drawOdds + "</span></div>" +
+    "<div class='odds-row'><span class='odds-label'>" + fixture.away + awayResult + "</span><span class='odds-value'>" + awayOdds + "</span></div>" +
     "<div style='margin-top:10px;'>" +
-    "<div style='display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px;'>" +
-    "<span style='color:#7c7c9e;'>Confidence</span>" +
-    "<span style='color:" + color + "; font-weight:bold;'>" + analysis.confidence + "%</span>" +
-    "</div>" +
-    "<div class='confidence-bar'><div class='confidence-fill' style='width:" + analysis.confidence + "%; background:" + color + ";'></div></div>" +
-    "</div>" +
-    "<div class='ai-reason'>🤖 <strong>Signal: " + analysis.signal + " " + analysis.target + "</strong><br>" + analysis.reason + "</div>" +
-    "<button class='write-btn' onclick='writeSignal(" + fixture.id + ", \"" + fixture.home + "\", \"" + fixture.away + "\", \"" + analysis.signal + "\", \"" + analysis.target + "\", " + analysis.confidence + ")'>⛓ Write Signal to Chain</button>" +
+    "<div style='display:flex;justify-content:space-between;font-size:11px;margin-bottom:4px;'>" +
+    "<span style='color:#7c7c9e;'>Confidence</span><span style='color:" + color + ";font-weight:bold;'>" + analysis.confidence + "%</span></div>" +
+    "<div class='confidence-bar'><div class='confidence-fill' style='width:" + analysis.confidence + "%;background:" + color + ";'></div></div></div>" +
+    "<div class='ai-reason'>🤖 <strong>" + analysis.signal + " " + analysis.target + "</strong><br>" + analysis.reason + "</div>" +
+    "<button class='write-btn' onclick='writeSignal(" + fixture.id + ",\"" + fixture.home + "\",\"" + fixture.away + "\",\"" + analysis.signal + "\",\"" + analysis.target + "\"," + analysis.confidence + ")'>⛓ Record Signal On-Chain</button>" +
     "</div>";
 }
 
 async function loadSignals() {
-  document.getElementById("signalGrid").innerHTML = "<div style='color:#7c7c9e; padding:20px;'>Loading signals from TxLINE & WorldCup26...</div>";
+  document.getElementById("signalGrid").innerHTML = "<div style='color:#7c7c9e;padding:20px;'>Loading...</div>";
   addLog("Fetching data...");
-
   await loadWCGames();
 
-  var html = "";
-  var buy = 0, sell = 0, hold = 0, total = 0;
-
+  var html = ""; var buy = 0, sell = 0, hold = 0;
   for (var i = 0; i < FIXTURES.length; i++) {
     var f = FIXTURES[i];
     var odds = await getOdds(f.id);
     var game = findWCGame(f.home, f.away);
     var analysis = analyzeSignal(f, odds, game);
     html += renderSignal(f, odds, analysis, game);
-
     if (analysis.signal === "BUY") buy++;
     else if (analysis.signal === "SELL") sell++;
     else hold++;
-    total++;
   }
 
   document.getElementById("signalGrid").innerHTML = html;
-  document.getElementById("totalSignals").textContent = total;
+  document.getElementById("totalSignals").textContent = FIXTURES.length;
   document.getElementById("buySignals").textContent = buy;
   document.getElementById("sellSignals").textContent = sell;
   document.getElementById("holdSignals").textContent = hold;
-
-  addLog("✓ Signals loaded — " + buy + " BUY, " + sell + " SELL, " + hold + " HOLD");
+  addLog("✓ " + buy + " BUY, " + sell + " SELL, " + hold + " HOLD");
 }
 
 async function writeSignal(fixtureId, home, away, signal, target, confidence) {
   if (!wallet) { addLog("Connect wallet first!"); return; }
   try {
-    addLog("Writing signal to chain...");
+    addLog("Recording signal on-chain...");
     var connection = new solanaWeb3.Connection("https://api.devnet.solana.com", "confirmed");
     var pubkey = wallet.publicKey;
     var memo = "TradingSignal:" + fixtureId + ":" + home + "vs" + away + ":" + signal + ":" + target + ":conf=" + confidence;
-
     var tx = new solanaWeb3.Transaction().add(
       new solanaWeb3.TransactionInstruction({
         keys: [{ pubkey: pubkey, isSigner: true, isWritable: false }],
@@ -349,14 +284,11 @@ async function writeSignal(fixtureId, home, away, signal, target, confidence) {
     tx.recentBlockhash = bh.blockhash;
     var signed = await wallet.signTransaction(tx);
     var txid = await connection.sendRawTransaction(signed.serialize());
-
     onChainCount++;
     document.getElementById("onChain").textContent = onChainCount;
-    addLog("✓ " + signal + " " + target + " written! Conf: " + confidence + "%");
+    addLog("✓ " + signal + " " + target + " recorded! Conf: " + confidence + "%");
     addLog('<a style="color:#a78bfa;" href="https://explorer.solana.com/tx/' + txid + '?cluster=devnet" target="_blank">' + txid.slice(0,20) + "...</a>");
-  } catch(e) {
-    addLog("Error: " + e.message);
-  }
+  } catch(e) { addLog("Error: " + e.message); }
 }
 
 function addLog(msg) {
@@ -372,13 +304,21 @@ document.getElementById("connectBtn").addEventListener("click", function() {
   window.solana.connect().then(function(r) {
     wallet = window.solana;
     document.getElementById("walletAddr").textContent = r.publicKey.toString().slice(0,8) + "...";
-    document.getElementById("connectBtn").textContent = "Connected";
+    document.getElementById("connectBtn").style.display = "none";
+    document.getElementById("disconnectBtn").style.display = "block";
     addLog("✓ Connected: " + r.publicKey.toString().slice(0,8) + "...");
   }).catch(function(e) { addLog("Error: " + e.message); });
 });
 
-document.getElementById("refreshBtn").addEventListener("click", loadSignals);
+document.getElementById("disconnectBtn").addEventListener("click", function() {
+  wallet = null;
+  document.getElementById("walletAddr").textContent = "";
+  document.getElementById("connectBtn").style.display = "block";
+  document.getElementById("disconnectBtn").style.display = "none";
+  addLog("Disconnected");
+});
 
+document.getElementById("refreshBtn").addEventListener("click", loadSignals);
 loadSignals();
 setInterval(loadSignals, 60000);
 </script>
